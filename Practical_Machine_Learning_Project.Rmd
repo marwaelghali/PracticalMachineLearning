@@ -1,0 +1,103 @@
+---
+title: "Practical Machine Learning Course Project"
+output:
+  html_document:
+    keep_md: yes
+---
+
+#### Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, who were asked to perform barbell lifts correctly and incorrectly in 5 different ways, to then predict the manner in which they did the exercise. This is defined by the "classe" variable in the training set, and any of the other relevant variables can be used to predict with. After deriving the model from the given training data, it is cross-validated while evaluating the out-of-sample error, and explaining any relevant choices made. The prediction model is also then used to predict 20 different test cases. 
+
+#### Exploratory Data Analysis
+The training data required for building the model can be downloaded from [this link][1], while the test data is available [here][2].  
+
+[1]:https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+[2]:https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+First, we load the training dataset, from the file in the current working directory, replacing missing values with 'NA'.
+```{r preprocess}
+trainset <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!", ""))
+
+```
+
+The training set contains `r nrow(trainset)` observations of `r ncol(trainset)` variables each. The five measurement classes (A, B, C, D, E) are distributed as such:
+```{r plot}
+plot(trainset$classe, main="Classe Variable Distribution", xlab="Classe Level", ylab="Frequency")
+```
+
+#### Data Processing
+First, we separate the training data into a training set and a validation set, using the *caret* package.
+```{r partition, warning=FALSE, message=FALSE}
+library(caret)
+
+set.seed(123456)
+partition <- createDataPartition(y = trainset$classe, p = 0.75, list = FALSE)
+training <- trainset[partition,]
+validation <- trainset[-partition,]
+```
+
+Then, we filter out the data by selecting only the variables relevant for the training model, and removing variables with missing values.
+```{r filtering}
+# exclude first 7 columns, which are only descriptive
+training <- training[, -c(1:7)]
+validation <- validation[, -c(1:7)]
+
+# exclude columns that have all missing values
+training <- training[, colSums(is.na(training)) == 0]
+validation <- validation[, colSums(is.na(validation)) == 0]
+```
+
+#### Decision Tree Model
+Since this is a classification problem, we'll
+try out the training model using 'Decision Trees' and the *rpart* method first.
+```{r decisiontree.model, warning=FALSE, message=FALSE}
+library(rpart)
+decmodel <- rpart(classe ~ ., data = training, method="class")
+```
+
+To assess the validity of the model, we compare against the validation set and inspect the confusion matrix.
+```{r decisiontree.validation}
+decpredict <- predict(decmodel, validation, type="class")
+confusionMatrix(decpredict, validation$classe)
+```
+
+As seen above, the accuracy of the model under the decision tree method is **73%**, so we should examine another method to construct the prediction model.
+
+#### Random Forest Model
+Since the accuracy of the model under the first method is not sufficient, we'll try out using 'Random Forest' as the training method instead, and again we examine the confusion matrix against the validation set.
+
+```{r randomforest, warning=FALSE, message=FALSE}
+library(randomForest)
+rfmodel <- randomForest(classe ~ ., data = training, method="class")
+
+rfpredict <- predict(rfmodel, validation, type="class")
+
+confusionMatrix(rfpredict, validation$classe)
+```
+
+Clearly, this is a better training model for this particular problem, as it provides an accuracy of **99.6%**, so the out-of-sample error is estimated at **0.4%**. 
+
+#### Testing Set Prediction
+The final step is to run the prediction model against the independent test set, and determine the required outcome. 
+```{r test}
+testset <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!", ""))
+
+testpred <- predict(rfmodel, testset)
+testpred
+```
+
+We can now write the outcome for each test case to an independent file as per the given instructions.
+```{r write}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(as.vector(testpred))
+```
+
